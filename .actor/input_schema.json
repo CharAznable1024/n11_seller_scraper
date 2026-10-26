@@ -1,0 +1,194 @@
+{
+  "$schema": "https://apify.com/schemas/v1/input.ide.json",
+  "title": "N11 seller lead discovery",
+  "description": "Discover sellers from N11 search, category, product, or store pages and enrich public store and business-registration fields.",
+  "type": "object",
+  "schemaVersion": 1,
+  "properties": {
+    "campaignId": {
+      "title": "Aime campaign ID",
+      "type": "string",
+      "description": "Optional Aime campaign identifier passed through to every Dataset row and OUTPUT record.",
+      "editor": "textfield",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+      "maxLength": 128,
+      "sectionCaption": "Aime orchestration"
+    },
+    "shardId": {
+      "title": "Aime shard ID",
+      "type": "string",
+      "description": "Optional Aime shard identifier passed through to every Dataset row and OUTPUT record.",
+      "editor": "textfield",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+      "maxLength": 128
+    },
+    "searchQueries": {
+      "title": "Search queries",
+      "type": "array",
+      "description": "Product, brand, or category phrases used on N11 search pages.",
+      "editor": "stringList",
+      "default": [],
+      "prefill": ["stüdyo kulaklığı"],
+      "maxItems": 50,
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "startUrls": {
+      "title": "N11 URLs",
+      "type": "array",
+      "description": "Optional public search, category, product, or store URLs. Provide searchQueries or startUrls.",
+      "editor": "requestListSources",
+      "default": [],
+      "prefill": []
+    },
+    "maxPagesPerSource": {
+      "title": "Maximum pages per source",
+      "type": "integer",
+      "description": "Pagination cap for each keyword or listing URL.",
+      "editor": "number",
+      "default": 1,
+      "minimum": 1,
+      "maximum": 20,
+      "sectionCaption": "Discovery"
+    },
+    "maxProductsPerSource": {
+      "title": "Maximum products per source page",
+      "type": "integer",
+      "description": "Maximum product links sampled from each search, category, or store page.",
+      "editor": "number",
+      "default": 20,
+      "minimum": 1,
+      "maximum": 200
+    },
+    "maxProductDetails": {
+      "title": "Maximum product detail pages",
+      "type": "integer",
+      "description": "Maximum product pages inspected for seller and product evidence.",
+      "editor": "number",
+      "default": 30,
+      "minimum": 1,
+      "maximum": 500
+    },
+    "maxSellerCandidates": {
+      "title": "Maximum seller candidates",
+      "type": "integer",
+      "description": "Maximum unique seller profiles inspected before qualification filters.",
+      "editor": "number",
+      "default": 50,
+      "minimum": 1,
+      "maximum": 2000,
+      "sectionCaption": "Seller qualification"
+    },
+    "maxSellers": {
+      "title": "Maximum qualified sellers",
+      "type": "integer",
+      "description": "Maximum qualified seller leads checkpointed to the Dataset.",
+      "editor": "number",
+      "default": 10,
+      "minimum": 1,
+      "maximum": 500
+    },
+    "minSellerRating": {
+      "title": "Minimum seller rating",
+      "type": "number",
+      "description": "Minimum public N11 store score on the 0-10 scale.",
+      "editor": "number",
+      "default": 0,
+      "minimum": 0,
+      "maximum": 10
+    },
+    "minProductCount": {
+      "title": "Minimum store products",
+      "type": "integer",
+      "description": "Only output stores whose public product count meets this threshold.",
+      "editor": "number",
+      "default": 1,
+      "minimum": 0
+    },
+    "minSellerReviewCount": {
+      "title": "Minimum store reviews",
+      "type": "integer",
+      "description": "Only output stores whose public feedback count meets this threshold.",
+      "editor": "number",
+      "default": 0,
+      "minimum": 0
+    },
+    "sellerCities": {
+      "title": "Headquarter cities",
+      "type": "array",
+      "description": "Optional case-insensitive exact filter on public headquarter city, for example İstanbul or Ankara.",
+      "editor": "stringList",
+      "default": [],
+      "items": { "type": "string" }
+    },
+    "sellerBadges": {
+      "title": "Seller badges",
+      "type": "array",
+      "description": "Optional exact filter on public badges such as Başarılı Mağaza, Hızlı Gönderim, or Yetkili Mağaza.",
+      "editor": "stringList",
+      "default": [],
+      "items": { "type": "string" }
+    },
+    "requireSellerProfile": {
+      "title": "Require store profile",
+      "type": "boolean",
+      "description": "Exclude candidates when the public N11 store profile cannot be parsed.",
+      "editor": "checkbox",
+      "default": true
+    },
+    "maxConcurrency": {
+      "title": "Discovery/detail concurrency",
+      "type": "integer",
+      "description": "Parallel search and product-detail requests.",
+      "editor": "number",
+      "default": 3,
+      "minimum": 1,
+      "maximum": 8,
+      "sectionCaption": "Run controls"
+    },
+    "maxProfileConcurrency": {
+      "title": "Store profile concurrency",
+      "type": "integer",
+      "description": "Parallel public store profile requests.",
+      "editor": "number",
+      "default": 3,
+      "minimum": 1,
+      "maximum": 8
+    },
+    "maxRequestRetries": {
+      "title": "Maximum unlock retries",
+      "type": "integer",
+      "description": "Retries after a failed or blocked Web Unlocker request.",
+      "editor": "number",
+      "default": 2,
+      "minimum": 0,
+      "maximum": 5
+    },
+    "navigationTimeoutSecs": {
+      "title": "Request timeout seconds",
+      "type": "integer",
+      "description": "Maximum duration of each Web Unlocker request.",
+      "editor": "number",
+      "default": 180,
+      "minimum": 30,
+      "maximum": 300
+    },
+    "dedupeMode": {
+      "title": "Cross-run deduplication",
+      "type": "string",
+      "description": "Emit all qualified rows, only new sellers, or new and changed sellers.",
+      "editor": "select",
+      "default": "new_and_updated",
+      "enum": ["all", "new_only", "new_and_updated"],
+      "enumTitles": ["All qualified leads", "New sellers only", "New and updated sellers"],
+      "sectionCaption": "Cross-run deduplication"
+    },
+    "dedupeStoreName": {
+      "title": "Persistent state store",
+      "type": "string",
+      "description": "Named Key-Value Store shared across Runs; use a distinct name per campaign when isolation is required.",
+      "editor": "textfield",
+      "default": "n11-seller-lead-state-v1",
+      "pattern": "^[A-Za-z0-9._-]{3,63}$"
+    }
+  }
+}
