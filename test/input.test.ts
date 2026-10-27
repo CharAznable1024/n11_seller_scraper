@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { normalizeInput } from '../src/input.js';
+import { DEFAULT_SEARCH_QUERIES, normalizeInput } from '../src/input.js';
 
 describe('normalizeInput', () => {
     it('normalizes tracing and defaults', () => {
@@ -16,8 +16,8 @@ describe('normalizeInput', () => {
         expect(input.startUrls).toEqual(['https://www.n11.com/magaza/musiclightmarket']);
     });
 
-    it('requires a source and validates tracing IDs', () => {
-        expect(() => normalizeInput({})).toThrow('Provide at least one');
+    it('uses balanced default categories and validates tracing IDs', () => {
+        expect(normalizeInput({}).searchQueries).toEqual(DEFAULT_SEARCH_QUERIES);
         expect(() => normalizeInput({ searchQueries: ['phone'], campaignId: 'bad id' })).toThrow('campaignId is invalid');
     });
 

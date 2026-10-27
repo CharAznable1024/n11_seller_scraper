@@ -1,5 +1,7 @@
 import type { ActorInput, DedupeMode, Input } from './types.js';
 
+export const DEFAULT_SEARCH_QUERIES = ['elektronik', 'ev yaşam', 'moda', 'kozmetik'];
+
 const optionalIdentifier = (value: unknown, field: string): string | null => {
     if (value === undefined || value === null) return null;
     if (typeof value !== 'string') throw new Error(`${field} must be a string`);
@@ -44,11 +46,9 @@ const boolean = (value: unknown, fallback: boolean, field: string): boolean => {
 
 export function normalizeInput(raw: ActorInput | null | undefined): Input {
     const data = raw ?? {};
-    const searchQueries = stringList(data.searchQueries, [], 'searchQueries');
+    const requestedSearchQueries = stringList(data.searchQueries, [], 'searchQueries');
     const startUrls = stringList(data.startUrls, [], 'startUrls');
-    if (searchQueries.length === 0 && startUrls.length === 0) {
-        throw new Error('Provide at least one searchQueries value or startUrls URL');
-    }
+    const searchQueries = requestedSearchQueries.length || startUrls.length ? requestedSearchQueries : [...DEFAULT_SEARCH_QUERIES];
     for (const value of startUrls) {
         const url = new URL(value);
         if (url.protocol !== 'https:' || !/(^|\.)n11\.com$/i.test(url.hostname)) {
