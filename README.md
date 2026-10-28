@@ -1,6 +1,14 @@
 # N11 Seller Scraper
 
-Custom Apify Actor for discovering N11 merchant leads. It starts from public keyword, category, product, or store URLs, discovers sellers from product pages, and enriches each seller from the public N11 store model. If the caller supplies no discovery source, it automatically rotates across electronics, home & living, fashion, and beauty queries.
+Custom Apify Actor for discovering N11 merchant leads. It starts from public keyword, category, product, or store URLs, discovers sellers from product pages, and enriches each seller from the public N11 store model. If the caller supplies no discovery source, the resumable full-catalog flow starts from `https://www.n11.com/elektronik`.
+
+## Resumable full-catalog crawl
+
+Each Run handles a bounded page shard. Set `startPage` to assign a page range explicitly, or omit it with `resumeFromCheckpoint: true` to continue from the cursor stored in `dedupeStoreName`. A page is marked complete only after its selected product details and seller candidates have been processed. Partial pages retain their seller progress and retry only unfinished work.
+
+The persistent state store caches completed pages, parsed product details, and parsed seller profiles. Re-running a completed page therefore makes no request for that page; overlapping pages/categories reuse product and profile results. Use one store name per campaign and avoid running the same source/page concurrently. The default `dedupeMode` is `new_only`, so the Dataset emits one row per N11 `seller_id`; Aime should still upsert by `platform + seller_id` during cross-Run aggregation.
+
+`OUTPUT.next_cursor.sources[]` contains `source_id`, `source_url`, `next_page`, and `exhausted`. Aime can either pass `next_page` back as `startPage` or leave `startPage` unset and let the Actor resume from the stored checkpoint.
 
 ## Data flow
 
@@ -45,7 +53,7 @@ listing pages + product detail pages + unique seller profile pages
 | `sellerCities`, `sellerBadges` | Optional public profile filters |
 | `dedupeMode`, `dedupeStoreName` | Cross-Run seller deduplication |
 
-Both discovery fields may be empty. In that case the Actor uses `elektronik`, `ev yaşam`, `moda`, and `kozmetik` automatically, then stops after `maxSellers` qualified leads.
+Both discovery fields may be empty. In that case the Actor crawls the Electronics category and stops after `maxSellers` qualified leads or the configured page shard is complete.
 
 ## Output
 

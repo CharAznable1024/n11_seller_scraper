@@ -1,6 +1,7 @@
 import type { ActorInput, DedupeMode, Input } from './types.js';
 
-export const DEFAULT_SEARCH_QUERIES = ['elektronik', 'ev yaşam', 'moda', 'kozmetik'];
+export const DEFAULT_SEARCH_QUERIES: string[] = [];
+export const DEFAULT_CATEGORY_URLS = ['https://www.n11.com/elektronik'];
 
 const optionalIdentifier = (value: unknown, field: string): string | null => {
     if (value === undefined || value === null) return null;
@@ -47,15 +48,17 @@ const boolean = (value: unknown, fallback: boolean, field: string): boolean => {
 export function normalizeInput(raw: ActorInput | null | undefined): Input {
     const data = raw ?? {};
     const requestedSearchQueries = stringList(data.searchQueries, [], 'searchQueries');
-    const startUrls = stringList(data.startUrls, [], 'startUrls');
-    const searchQueries = requestedSearchQueries.length || startUrls.length ? requestedSearchQueries : [...DEFAULT_SEARCH_QUERIES];
+    const requestedStartUrls = stringList(data.startUrls, [], 'startUrls');
+    const useDefaultCategory = requestedSearchQueries.length === 0 && requestedStartUrls.length === 0;
+    const startUrls = useDefaultCategory ? [...DEFAULT_CATEGORY_URLS] : requestedStartUrls;
+    const searchQueries = requestedSearchQueries;
     for (const value of startUrls) {
         const url = new URL(value);
         if (url.protocol !== 'https:' || !/(^|\.)n11\.com$/i.test(url.hostname)) {
             throw new Error('startUrls must contain public N11 HTTPS URLs');
         }
     }
-    const dedupeMode = (data.dedupeMode ?? 'new_and_updated') as DedupeMode;
+    const dedupeMode = (data.dedupeMode ?? 'new_only') as DedupeMode;
     if (!['all', 'new_only', 'new_and_updated'].includes(dedupeMode)) throw new Error('Invalid dedupeMode');
     const dedupeStoreName = data.dedupeStoreName ?? 'n11-seller-lead-state-v1';
     if (typeof dedupeStoreName !== 'string' || !/^[A-Za-z0-9._-]{3,63}$/.test(dedupeStoreName)) {
@@ -69,12 +72,16 @@ export function normalizeInput(raw: ActorInput | null | undefined): Input {
         sellerCities: stringList(data.sellerCities, [], 'sellerCities'),
         sellerBadges: stringList(data.sellerBadges, [], 'sellerBadges'),
         maxPagesPerSource: integer(data.maxPagesPerSource, 1, 1, 20, 'maxPagesPerSource'),
+        startPage: data.startPage === undefined || data.startPage === null
+            ? null
+            : integer(data.startPage, 1, 1, 1_000_000, 'startPage'),
+        resumeFromCheckpoint: boolean(data.resumeFromCheckpoint, true, 'resumeFromCheckpoint'),
         maxProductsPerSource: integer(data.maxProductsPerSource, 20, 1, 200, 'maxProductsPerSource'),
         maxProductDetails: integer(data.maxProductDetails, 30, 1, 500, 'maxProductDetails'),
         maxSellerCandidates: integer(data.maxSellerCandidates, 50, 1, 2000, 'maxSellerCandidates'),
         maxSellers: integer(data.maxSellers, 10, 1, 500, 'maxSellers'),
         minSellerRating: finiteNumber(data.minSellerRating, 0, 0, 10, 'minSellerRating'),
-        minProductCount: integer(data.minProductCount, 1, 0, 10_000_000, 'minProductCount'),
+        minProductCount: integer(data.minProductCount, 0, 0, 10_000_000, 'minProductCount'),
         minSellerReviewCount: integer(data.minSellerReviewCount, 0, 0, 1_000_000_000, 'minSellerReviewCount'),
         requireSellerProfile: boolean(data.requireSellerProfile, true, 'requireSellerProfile'),
         maxConcurrency: integer(data.maxConcurrency, 3, 1, 8, 'maxConcurrency'),

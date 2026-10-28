@@ -8,6 +8,8 @@ export interface ActorInput {
     sellerCities?: unknown;
     sellerBadges?: unknown;
     maxPagesPerSource?: unknown;
+    startPage?: unknown;
+    resumeFromCheckpoint?: unknown;
     maxProductsPerSource?: unknown;
     maxProductDetails?: unknown;
     maxSellerCandidates?: unknown;
@@ -32,6 +34,8 @@ export interface Input {
     sellerCities: string[];
     sellerBadges: string[];
     maxPagesPerSource: number;
+    startPage: number | null;
+    resumeFromCheckpoint: boolean;
     maxProductsPerSource: number;
     maxProductDetails: number;
     maxSellerCandidates: number;
@@ -186,8 +190,16 @@ export interface RunSummary {
     dataset_id: string;
     scanned_count: number;
     qualified_count: number;
-    next_cursor: null;
+    next_cursor: CrawlCursor | null;
     has_more: boolean;
+    start_page: number | null;
+    resume_from_checkpoint: boolean;
+    page_attempted: number;
+    page_completed: number;
+    page_skipped: number;
+    page_resumed: number;
+    product_cache_hits: number;
+    seller_profile_cache_hits: number;
     search_queries: string[];
     start_urls: string[];
     discovery_source_count: number;
@@ -205,4 +217,17 @@ export interface RunSummary {
     access_usage: AccessUsage;
     started_at: string;
     finished_at?: string;
+}
+
+export interface SourceCursor {
+    source_id: string;
+    source_url: string;
+    label: string;
+    next_page: number;
+    exhausted: boolean;
+}
+
+export interface CrawlCursor {
+    version: 1;
+    sources: SourceCursor[];
 }

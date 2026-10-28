@@ -22,4 +22,11 @@ describe('applyDedupe', () => {
         expect(second.emit).toBe(false);
         expect(second.lead.dedupe_status).toBe('unchanged');
     });
+
+    it('emits the same platform seller only once in full-crawl mode', async () => {
+        const values = new Map<string, unknown>();
+        const store = { getValue: async <T>(key: string) => (values.get(key) as T | undefined) ?? null, setValue: async (key: string, value: unknown) => { values.set(key, value); } };
+        expect((await applyDedupe(store, lead(), 'new_only')).emit).toBe(true);
+        expect((await applyDedupe(store, { ...lead(), seller_rating: 9 }, 'new_only')).emit).toBe(false);
+    });
 });
