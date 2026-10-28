@@ -1,8 +1,14 @@
 export type DedupeMode = 'all' | 'new_only' | 'new_and_updated';
+export type CrawlScope = 'full_platform' | 'custom';
+export type AccessMode = 'direct' | 'apify_proxy' | 'bright_data' | 'auto';
 
 export interface ActorInput {
     campaignId?: unknown;
     shardId?: unknown;
+    crawlScope?: unknown;
+    maxCategoriesPerRun?: unknown;
+    accessMode?: unknown;
+    apifyProxyCountry?: unknown;
     searchQueries?: unknown;
     startUrls?: unknown;
     sellerCities?: unknown;
@@ -29,6 +35,10 @@ export interface ActorInput {
 export interface Input {
     campaignId: string | null;
     shardId: string | null;
+    crawlScope: CrawlScope;
+    maxCategoriesPerRun: number;
+    accessMode: AccessMode;
+    apifyProxyCountry: string;
     searchQueries: string[];
     startUrls: string[];
     sellerCities: string[];
@@ -58,10 +68,24 @@ export interface AccessUsage {
     direct_successes: number;
     direct_failures: number;
     direct_disabled: boolean;
+    apify_proxy_request_attempts: number;
+    apify_proxy_successful_requests: number;
+    apify_proxy_failed_attempts: number;
+    apify_proxy_response_bytes: number;
+    apify_proxy_response_gigabytes: number;
     unlocker_request_attempts: number;
     unlocker_successful_requests: number;
     unlocker_failed_attempts: number;
     estimated_unlocker_cost_usd: number;
+}
+
+export interface ApifyProxyUsage {
+    logical_requests: number;
+    request_attempts: number;
+    successful_requests: number;
+    failed_attempts: number;
+    response_bytes: number;
+    response_gigabytes: number;
 }
 
 export interface ProductEvidence {
@@ -192,6 +216,13 @@ export interface RunSummary {
     qualified_count: number;
     next_cursor: CrawlCursor | null;
     has_more: boolean;
+    crawl_scope: CrawlScope;
+    category_manifest_version: string | null;
+    total_category_count: number;
+    completed_category_count: number;
+    remaining_category_count: number;
+    categories_processed_this_run: number;
+    current_category: string | null;
     start_page: number | null;
     resume_from_checkpoint: boolean;
     page_attempted: number;
@@ -214,6 +245,8 @@ export interface RunSummary {
     emitted_lead_count: number;
     duplicate_suppressed_count: number;
     failed_sources: Array<{ source: string; error: string }>;
+    access_mode: AccessMode;
+    apify_proxy_country: string;
     access_usage: AccessUsage;
     started_at: string;
     finished_at?: string;

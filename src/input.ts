@@ -1,7 +1,6 @@
-import type { ActorInput, DedupeMode, Input } from './types.js';
+import type { AccessMode, ActorInput, CrawlScope, DedupeMode, Input } from './types.js';
 
 export const DEFAULT_SEARCH_QUERIES: string[] = [];
-export const DEFAULT_CATEGORY_URLS = ['https://www.n11.com/elektronik'];
 
 const optionalIdentifier = (value: unknown, field: string): string | null => {
     if (value === undefined || value === null) return null;
@@ -49,8 +48,18 @@ export function normalizeInput(raw: ActorInput | null | undefined): Input {
     const data = raw ?? {};
     const requestedSearchQueries = stringList(data.searchQueries, [], 'searchQueries');
     const requestedStartUrls = stringList(data.startUrls, [], 'startUrls');
-    const useDefaultCategory = requestedSearchQueries.length === 0 && requestedStartUrls.length === 0;
-    const startUrls = useDefaultCategory ? [...DEFAULT_CATEGORY_URLS] : requestedStartUrls;
+    const hasCustomSources = requestedSearchQueries.length > 0 || requestedStartUrls.length > 0;
+    const crawlScope = (data.crawlScope ?? (hasCustomSources ? 'custom' : 'full_platform')) as CrawlScope;
+    if (!['full_platform', 'custom'].includes(crawlScope)) throw new Error('crawlScope must be full_platform or custom');
+    if (crawlScope === 'full_platform' && hasCustomSources) throw new Error('searchQueries and startUrls must be empty in full_platform mode');
+    if (crawlScope === 'custom' && !hasCustomSources) throw new Error('custom crawlScope requires searchQueries or startUrls');
+    const accessMode = (data.accessMode ?? 'bright_data') as AccessMode;
+    if (!['direct', 'apify_proxy', 'bright_data', 'auto'].includes(accessMode)) throw new Error('Invalid accessMode');
+    const apifyProxyCountry = data.apifyProxyCountry ?? 'TR';
+    if (typeof apifyProxyCountry !== 'string' || !/^[A-Za-z]{2}$/.test(apifyProxyCountry)) {
+        throw new Error('apifyProxyCountry must be a two-letter country code');
+    }
+    const startUrls = requestedStartUrls;
     const searchQueries = requestedSearchQueries;
     for (const value of startUrls) {
         const url = new URL(value);
@@ -60,21 +69,27 @@ export function normalizeInput(raw: ActorInput | null | undefined): Input {
     }
     const dedupeMode = (data.dedupeMode ?? 'new_only') as DedupeMode;
     if (!['all', 'new_only', 'new_and_updated'].includes(dedupeMode)) throw new Error('Invalid dedupeMode');
-    const dedupeStoreName = data.dedupeStoreName ?? 'n11-seller-lead-state-v1';
+    const dedupeStoreName = data.dedupeStoreName ?? (crawlScope === 'full_platform' ? 'n11-full-platform-v1' : 'n11-seller-lead-state-v1');
     if (typeof dedupeStoreName !== 'string' || !/^[A-Za-z0-9._-]{3,63}$/.test(dedupeStoreName)) {
         throw new Error('dedupeStoreName must use 3-63 letters, numbers, dots, underscores, or hyphens');
     }
+    const startPage = data.startPage === undefined || data.startPage === null
+        ? null
+        : integer(data.startPage, 1, 1, 1_000_000, 'startPage');
+    if (crawlScope === 'full_platform' && startPage !== null) throw new Error('startPage is only supported in custom mode');
     return {
         campaignId: optionalIdentifier(data.campaignId, 'campaignId'),
         shardId: optionalIdentifier(data.shardId, 'shardId'),
+        crawlScope,
+        maxCategoriesPerRun: integer(data.maxCategoriesPerRun, 1, 1, 50, 'maxCategoriesPerRun'),
+        accessMode,
+        apifyProxyCountry: apifyProxyCountry.toUpperCase(),
         searchQueries,
         startUrls,
         sellerCities: stringList(data.sellerCities, [], 'sellerCities'),
         sellerBadges: stringList(data.sellerBadges, [], 'sellerBadges'),
         maxPagesPerSource: integer(data.maxPagesPerSource, 1, 1, 20, 'maxPagesPerSource'),
-        startPage: data.startPage === undefined || data.startPage === null
-            ? null
-            : integer(data.startPage, 1, 1, 1_000_000, 'startPage'),
+        startPage,
         resumeFromCheckpoint: boolean(data.resumeFromCheckpoint, true, 'resumeFromCheckpoint'),
         maxProductsPerSource: integer(data.maxProductsPerSource, 20, 1, 200, 'maxProductsPerSource'),
         maxProductDetails: integer(data.maxProductDetails, 30, 1, 500, 'maxProductDetails'),

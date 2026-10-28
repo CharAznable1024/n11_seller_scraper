@@ -44,4 +44,14 @@ describe('CrawlState', () => {
         expect(await state.getProduct(product)).toEqual({ seller_id: 'seller-1' });
         expect(await state.getProfile('seller-1')).toEqual({ seller_id: 'seller-1' });
     });
+
+    it('detects a repeated listing so redirected last pages can terminate a category', async () => {
+        const { store } = memoryStore();
+        const state = new CrawlState(store, 'pg');
+        const source = 'https://www.n11.com/elektronik';
+        const products = ['https://www.n11.com/urun/a', 'https://www.n11.com/urun/b'];
+        expect(await state.hasSeenListing(source, products)).toBe(false);
+        await state.rememberListing(source, 1, products);
+        expect(await state.hasSeenListing(source, [...products].reverse())).toBe(true);
+    });
 });

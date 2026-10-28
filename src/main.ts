@@ -1,6 +1,8 @@
 import { Actor, log } from 'apify';
 
 import { AdaptivePageFetcher } from './access.js';
+import { ApifyResidentialFetcher } from './apify-proxy.js';
+import { CATEGORY_MANIFEST_VERSION, FULL_PLATFORM_CATEGORIES, selectPendingCategories, validateCategoryManifest } from './categories.js';
 import { CrawlState, type PageProgress } from './crawl-state.js';
 import { applyDedupe } from './dedupe.js';
 import { normalizeInput } from './input.js';
@@ -13,14 +15,26 @@ const input = normalizeInput(await Actor.getInput<ActorInput>());
 const runId = process.env.APIFY_ACTOR_RUN_ID?.trim() || process.env.ACTOR_RUN_ID?.trim() || 'local';
 const datasetId = process.env.APIFY_DEFAULT_DATASET_ID?.trim() || process.env.ACTOR_DEFAULT_DATASET_ID?.trim() || 'default';
 const brightDataApiKey = process.env.BRIGHT_DATA_API_KEY?.trim();
-if (!brightDataApiKey) throw new Error('BRIGHT_DATA_API_KEY is required for automatic N11 Cloudflare fallback');
+if (input.accessMode === 'bright_data' && !brightDataApiKey) throw new Error('BRIGHT_DATA_API_KEY is required in bright_data mode');
+
+const needsApifyProxy = input.accessMode === 'apify_proxy' || input.accessMode === 'auto';
+const proxyConfiguration = needsApifyProxy ? await Actor.createProxyConfiguration({
+    groups: ['RESIDENTIAL'],
+    countryCode: input.apifyProxyCountry,
+}) : undefined;
+if (input.accessMode === 'apify_proxy' && !proxyConfiguration) throw new Error('Apify Residential Proxy is unavailable for this account');
+const apifyProxyFetcher = proxyConfiguration
+    ? new ApifyResidentialFetcher(proxyConfiguration, input.navigationTimeoutSecs * 1_000, input.maxRequestRetries + 1)
+    : null;
 
 const pageFetcher = new AdaptivePageFetcher({
+    accessMode: input.accessMode,
     apiKey: brightDataApiKey,
     zone: process.env.BRIGHT_DATA_ZONE?.trim() || 'ebay_live_unlocker',
     timeoutMillis: input.navigationTimeoutSecs * 1_000,
     maxAttempts: input.maxRequestRetries + 1,
     directTimeoutMillis: 8_000,
+    apifyProxyFetcher,
 });
 const dedupeStore = await Actor.openKeyValueStore(input.dedupeStoreName);
 const crawlState = new CrawlState(dedupeStore, 'pg');
@@ -48,6 +62,8 @@ let productCacheHits = 0;
 let sellerProfileCacheHits = 0;
 let productDetailFetches = 0;
 let sellerCandidateProcessed = 0;
+let categoriesProcessedThisRun = 0;
+let currentCategory: string | null = null;
 
 const discoverySources: Array<{ url: string; label: string }> = [];
 const directProductUrls: Array<{ url: string; label: string }> = [];
@@ -58,20 +74,26 @@ function paginatedUrl(value: string, page: number): string {
     return url.toString();
 }
 
-for (const query of input.searchQueries) {
-    const base = `https://www.n11.com/arama?q=${encodeURIComponent(query)}`;
-    discoverySources.push({ url: base, label: query });
-}
-for (const startUrl of input.startUrls) {
-    if (isProductUrl(startUrl)) {
-        directProductUrls.push({ url: startUrl, label: startUrl });
-        continue;
+if (input.crawlScope === 'full_platform') {
+    validateCategoryManifest(FULL_PLATFORM_CATEGORIES);
+    for (const category of FULL_PLATFORM_CATEGORIES) discoverySources.push({ url: category.url, label: category.name });
+} else {
+    for (const query of input.searchQueries) {
+        const base = `https://www.n11.com/arama?q=${encodeURIComponent(query)}`;
+        discoverySources.push({ url: base, label: query });
     }
-    discoverySources.push({ url: startUrl, label: startUrl });
+    for (const startUrl of input.startUrls) {
+        if (isProductUrl(startUrl)) {
+            directProductUrls.push({ url: startUrl, label: startUrl });
+            continue;
+        }
+        discoverySources.push({ url: startUrl, label: startUrl });
+    }
 }
 
 function summary(status: RunSummary['status']): RunSummary {
     const cursors = [...sourceCursors.values()];
+    const completedCategoryCount = cursors.filter((cursor) => cursor.exhausted).length;
     return {
         status,
         schema_version: '1.0',
@@ -83,6 +105,13 @@ function summary(status: RunSummary['status']): RunSummary {
         qualified_count: emittedLeadCount,
         next_cursor: cursors.length ? { version: 1, sources: cursors } : null,
         has_more: cursors.some((cursor) => !cursor.exhausted),
+        crawl_scope: input.crawlScope,
+        category_manifest_version: input.crawlScope === 'full_platform' ? CATEGORY_MANIFEST_VERSION : null,
+        total_category_count: discoverySources.length,
+        completed_category_count: completedCategoryCount,
+        remaining_category_count: discoverySources.length - completedCategoryCount,
+        categories_processed_this_run: categoriesProcessedThisRun,
+        current_category: currentCategory,
         start_page: input.startPage,
         resume_from_checkpoint: input.resumeFromCheckpoint,
         page_attempted: pageAttempted,
@@ -105,10 +134,20 @@ function summary(status: RunSummary['status']): RunSummary {
         emitted_lead_count: emittedLeadCount,
         duplicate_suppressed_count: duplicateSuppressedCount,
         failed_sources: failedSources,
+        access_mode: input.accessMode,
+        apify_proxy_country: input.apifyProxyCountry,
         access_usage: { ...pageFetcher.usage },
         started_at: startedAt,
         ...(status === 'RUNNING' ? {} : { finished_at: new Date().toISOString() }),
     };
+}
+
+async function initializeSourceCursors(): Promise<void> {
+    for (const source of discoverySources) {
+        const startPage = await crawlState.resolveStartPage(source.url, input.startPage, input.resumeFromCheckpoint);
+        const cursor = await crawlState.cursor(source.url, source.label, startPage);
+        sourceCursors.set(cursor.source_id, cursor);
+    }
 }
 
 async function checkpoint(): Promise<void> {
@@ -340,7 +379,16 @@ async function processSourcePage(source: { url: string; label: string }, page: n
         try {
             const html = await pageFetcher.fetchHtml(pageUrl);
             const discovered = extractProductUrls(html, pageUrl).slice(0, input.maxProductsPerSource);
+            const repeatedListing = await crawlState.hasSeenListing(source.url, discovered);
             progress = await crawlState.beginPage(source.url, source.label, page, discovered);
+            if (repeatedListing) {
+                await crawlState.completePage(progress, true);
+                pageCompleted += 1;
+                sourceCursors.set(progress.source_id, await crawlState.cursor(source.url, source.label, page));
+                log.info('Repeated listing detected; category marked exhausted', { category: source.label, page });
+                return true;
+            }
+            await crawlState.rememberListing(source.url, page, discovered);
             if (isStoreUrl(source.url)) {
                 const profile = parseMerchantProfile(html);
                 if (profile) {
@@ -411,20 +459,32 @@ async function processSourcePage(source: { url: string; label: string }, page: n
     return pageSucceeded;
 }
 
+await initializeSourceCursors();
 await Actor.setValue('OUTPUT', summary('RUNNING'));
 log.info('N11 seller discovery started', { campaignId: input.campaignId, shardId: input.shardId, runId, datasetId });
 
 try {
-    for (const source of discoverySources) {
+    const scheduledSources = input.crawlScope === 'full_platform'
+        ? selectPendingCategories(
+            discoverySources,
+            new Set([...sourceCursors.values()].filter((cursor) => cursor.exhausted).map((cursor) => cursor.source_url)),
+            input.maxCategoriesPerRun,
+        )
+        : discoverySources;
+    for (const source of scheduledSources) {
+        if (emittedLeadCount >= input.maxSellers) break;
+        currentCategory = source.label;
+        categoriesProcessedThisRun += 1;
         const startPage = await crawlState.resolveStartPage(source.url, input.startPage, input.resumeFromCheckpoint);
-        const initialCursor = await crawlState.cursor(source.url, source.label, startPage);
-        sourceCursors.set(initialCursor.source_id, initialCursor);
         for (let page = startPage; page < startPage + input.maxPagesPerSource; page += 1) {
             if (emittedLeadCount >= input.maxSellers) break;
             if (!await processSourcePage(source, page)) break;
             const cursor = await crawlState.cursor(source.url, source.label, page + 1);
             if (cursor.exhausted) break;
         }
+        if (emittedLeadCount >= input.maxSellers
+            || productDetailFetches >= input.maxProductDetails
+            || sellerCandidateProcessed >= input.maxSellerCandidates) break;
     }
 
     for (const direct of directProductUrls) {

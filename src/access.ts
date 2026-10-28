@@ -1,11 +1,14 @@
-import type { AccessUsage } from './types.js';
+import type { ApifyResidentialFetcher } from './apify-proxy.js';
+import type { AccessMode, AccessUsage } from './types.js';
 
 interface AccessOptions {
-    apiKey: string;
+    accessMode: AccessMode;
+    apiKey?: string;
     zone: string;
     timeoutMillis: number;
     maxAttempts: number;
     directTimeoutMillis?: number;
+    apifyProxyFetcher?: ApifyResidentialFetcher | null;
 }
 
 type DirectProbe = { state: 'available'; html: string } | { state: 'blocked' };
@@ -17,6 +20,11 @@ export class AdaptivePageFetcher {
         direct_successes: 0,
         direct_failures: 0,
         direct_disabled: false,
+        apify_proxy_request_attempts: 0,
+        apify_proxy_successful_requests: 0,
+        apify_proxy_failed_attempts: 0,
+        apify_proxy_response_bytes: 0,
+        apify_proxy_response_gigabytes: 0,
         unlocker_request_attempts: 0,
         unlocker_successful_requests: 0,
         unlocker_failed_attempts: 0,
@@ -30,7 +38,10 @@ export class AdaptivePageFetcher {
 
     async fetchHtml(url: string): Promise<string> {
         this.usage.logical_requests += 1;
-        if (this.directState === 'blocked') return this.fetchUnlocked(url);
+        if (this.options.accessMode === 'direct') return this.fetchDirect(url);
+        if (this.options.accessMode === 'apify_proxy') return this.fetchApifyProxy(url);
+        if (this.options.accessMode === 'bright_data') return this.fetchUnlocked(url);
+        if (this.directState === 'blocked') return this.fetchFallback(url);
         if (this.directState === 'unknown') {
             const probeOwner = this.directProbe === null;
             if (!this.directProbe) this.directProbe = this.probeDirect(url);
@@ -38,14 +49,39 @@ export class AdaptivePageFetcher {
             this.directState = result.state;
             this.usage.direct_disabled = result.state === 'blocked';
             if (probeOwner && result.state === 'available') return result.html;
-            if (result.state === 'blocked') return this.fetchUnlocked(url);
+            if (result.state === 'blocked') return this.fetchFallback(url);
         }
         try {
             return await this.fetchDirect(url);
         } catch {
             this.directState = 'blocked';
             this.usage.direct_disabled = true;
-            return this.fetchUnlocked(url);
+            return this.fetchFallback(url);
+        }
+    }
+
+    private async fetchFallback(url: string): Promise<string> {
+        if (this.options.apifyProxyFetcher) {
+            try {
+                return await this.fetchApifyProxy(url);
+            } catch {
+                if (!this.options.apiKey) throw new Error('Apify Residential Proxy failed and Bright Data fallback is not configured');
+            }
+        }
+        return this.fetchUnlocked(url);
+    }
+
+    private async fetchApifyProxy(url: string): Promise<string> {
+        const fetcher = this.options.apifyProxyFetcher;
+        if (!fetcher) throw new Error('Apify Residential Proxy is unavailable');
+        try {
+            return await fetcher.fetchHtml(url);
+        } finally {
+            this.usage.apify_proxy_request_attempts = fetcher.usage.request_attempts;
+            this.usage.apify_proxy_successful_requests = fetcher.usage.successful_requests;
+            this.usage.apify_proxy_failed_attempts = fetcher.usage.failed_attempts;
+            this.usage.apify_proxy_response_bytes = fetcher.usage.response_bytes;
+            this.usage.apify_proxy_response_gigabytes = fetcher.usage.response_gigabytes;
         }
     }
 
@@ -79,6 +115,7 @@ export class AdaptivePageFetcher {
     }
 
     private async fetchUnlocked(url: string): Promise<string> {
+        if (!this.options.apiKey) throw new Error('BRIGHT_DATA_API_KEY is not configured');
         let lastError: unknown;
         for (let attempt = 1; attempt <= this.options.maxAttempts; attempt += 1) {
             this.usage.unlocker_request_attempts += 1;

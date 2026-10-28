@@ -1,6 +1,10 @@
 {
   "campaignId": "cmp_n11_smoke",
-  "shardId": "shd_electronics_01",
+  "shardId": "shd_full_platform_0001",
+  "crawlScope": "full_platform",
+  "maxCategoriesPerRun": 1,
+  "accessMode": "apify_proxy",
+  "apifyProxyCountry": "TR",
   "resumeFromCheckpoint": true,
   "maxPagesPerSource": 1,
   "maxProductsPerSource": 10,
@@ -10,5 +14,5 @@
   "minSellerRating": 0,
   "minProductCount": 0,
   "dedupeMode": "new_only",
-  "dedupeStoreName": "n11-electronics-full-crawl-v1"
+  "dedupeStoreName": "n11-full-platform-v1"
 }

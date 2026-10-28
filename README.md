@@ -1,19 +1,19 @@
 # N11 Seller Scraper
 
-Custom Apify Actor for discovering N11 merchant leads. It starts from public keyword, category, product, or store URLs, discovers sellers from product pages, and enriches each seller from the public N11 store model. If the caller supplies no discovery source, the resumable full-catalog flow starts from `https://www.n11.com/elektronik`.
+Custom Apify Actor for discovering N11 merchant leads. The default `full_platform` scope traverses a versioned manifest of product-bearing second-level categories extracted from the current public navigation. Navigation-only landing pages are excluded. Custom keyword, category, product, and store URL discovery remains available through `crawlScope: "custom"`.
 
 ## Resumable full-catalog crawl
 
-Each Run handles a bounded page shard. Set `startPage` to assign a page range explicitly, or omit it with `resumeFromCheckpoint: true` to continue from the cursor stored in `dedupeStoreName`. A page is marked complete only after its selected product details and seller candidates have been processed. Partial pages retain their seller progress and retry only unfinished work.
+Each Run handles a bounded number of categories and pages. In `full_platform` mode, `maxCategoriesPerRun` selects the first unfinished categories and every category owns an independent cursor in `dedupeStoreName`. A page is marked complete only after its selected product details and seller candidates have been processed. Partial pages retain their seller progress and retry only unfinished work.
 
 The persistent state store caches completed pages, parsed product details, and parsed seller profiles. Re-running a completed page therefore makes no request for that page; overlapping pages/categories reuse product and profile results. Use one store name per campaign and avoid running the same source/page concurrently. The default `dedupeMode` is `new_only`, so the Dataset emits one row per N11 `seller_id`; Aime should still upsert by `platform + seller_id` during cross-Run aggregation.
 
-`OUTPUT.next_cursor.sources[]` contains `source_id`, `source_url`, `next_page`, and `exhausted`. Aime can either pass `next_page` back as `startPage` or leave `startPage` unset and let the Actor resume from the stored checkpoint.
+`OUTPUT.next_cursor.sources[]` contains `source_id`, `source_url`, `next_page`, and `exhausted` for all manifest categories. `total_category_count`, `completed_category_count`, `remaining_category_count`, `categories_processed_this_run`, and `current_category` expose platform-level progress. Aime should leave `startPage` unset and start another shard while `has_more` is true.
 
 ## Data flow
 
 ```text
-searchQueries / startUrls
+crawlScope=full_platform / versioned category manifest
         |
         v
 N11 search/category/store pages -- extract product URLs
@@ -32,7 +32,7 @@ The parser reads N11's server-rendered `window.model` JSON instead of generated 
 
 ## Access strategy
 
-N11 currently returns Cloudflare HTTP 403 to direct cloud traffic. The Actor performs one short direct probe per Run. If the probe is blocked, direct access is disabled for the rest of that Run and all pages automatically use the configured Bright Data Web Unlocker. Operators do not select a proxy mode.
+N11 has returned Cloudflare HTTP 403 to direct cloud traffic. `accessMode: "apify_proxy"` routes every request through Apify Residential Proxy with Turkey routing and never calls Bright Data. `bright_data` uses Web Unlocker directly, while `auto` tries direct, Apify Proxy, then Bright Data when configured.
 
 With the current Bright Data plan, each successful unlocked page costs approximately **$0.0015**. Estimated request count is:
 
@@ -45,15 +45,17 @@ listing pages + product detail pages + unique seller profile pages
 | Field | Meaning |
 | --- | --- |
 | `campaignId`, `shardId` | Optional Aime pass-through tracing IDs |
-| `searchQueries` | Optional product, brand, or category phrases; empty uses balanced default categories |
-| `startUrls` | Search/category/product/store URLs |
+| `crawlScope` | `full_platform` (default) or `custom` |
+| `maxCategoriesPerRun` | Maximum unfinished manifest categories scheduled in one Run |
+| `accessMode`, `apifyProxyCountry` | Network path: direct, Apify Residential Proxy, Bright Data, or fallback chain |
+| `searchQueries`, `startUrls` | Custom-mode discovery sources; leave empty in full-platform mode |
 | `maxSellers` | Maximum qualified sellers checkpointed to Dataset |
 | `maxSellerCandidates` | Maximum public store profiles inspected |
 | `minSellerRating`, `minProductCount`, `minSellerReviewCount` | Seller qualification filters |
 | `sellerCities`, `sellerBadges` | Optional public profile filters |
 | `dedupeMode`, `dedupeStoreName` | Cross-Run seller deduplication |
 
-Both discovery fields may be empty. In that case the Actor crawls the Electronics category and stops after `maxSellers` qualified leads or the configured page shard is complete.
+When both discovery fields are empty, the Actor traverses the complete built-in platform manifest. It automatically skips exhausted categories and continues the first unfinished category in later Runs that use the same `dedupeStoreName`.
 
 ## Output
 
@@ -78,4 +80,4 @@ npm run build
 apify validate-schema
 ```
 
-Local live runs require `BRIGHT_DATA_API_KEY`. Cloud deployment injects the configured Apify secret through `.actor/actor.json`.
+Local Bright Data runs require `BRIGHT_DATA_API_KEY`. Apify Residential Proxy is intended for cloud Actor runs; local external proxy access depends on the Apify account plan.
