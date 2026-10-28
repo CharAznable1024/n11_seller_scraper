@@ -32,7 +32,7 @@ The parser reads N11's server-rendered `window.model` JSON instead of generated 
 
 ## Access strategy
 
-N11 has returned Cloudflare HTTP 403 to direct cloud traffic. The default `accessMode: "apify_proxy"` routes every request through Apify Residential Proxy with Turkey routing and never calls Bright Data. `bright_data` uses Web Unlocker only when explicitly requested, while `auto` tries direct, Apify Proxy, then Bright Data when configured.
+N11 has returned Cloudflare HTTP 403 to direct cloud traffic. The default `accessMode: "auto"` sends every request through Apify Residential Proxy with Turkey routing and retries only failed requests through Bright Data Web Unlocker. `apify_proxy` disables that fallback, while `bright_data` uses Web Unlocker directly. Direct probing is skipped in `auto` mode because it has consistently returned Cloudflare 403.
 
 With the current Bright Data plan, each successful unlocked page costs approximately **$0.0015**. Estimated request count is:
 

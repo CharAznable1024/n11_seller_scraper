@@ -3,7 +3,7 @@
   "shardId": "shd_full_platform_0001",
   "crawlScope": "full_platform",
   "maxCategoriesPerRun": 1,
-  "accessMode": "apify_proxy",
+  "accessMode": "auto",
   "apifyProxyCountry": "TR",
   "resumeFromCheckpoint": true,
   "maxPagesPerSource": 1,

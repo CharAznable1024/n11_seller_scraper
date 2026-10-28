@@ -41,6 +41,7 @@ export class AdaptivePageFetcher {
         if (this.options.accessMode === 'direct') return this.fetchDirect(url);
         if (this.options.accessMode === 'apify_proxy') return this.fetchApifyProxy(url);
         if (this.options.accessMode === 'bright_data') return this.fetchUnlocked(url);
+        if (this.options.accessMode === 'auto') return this.fetchFallback(url);
         if (this.directState === 'blocked') return this.fetchFallback(url);
         if (this.directState === 'unknown') {
             const probeOwner = this.directProbe === null;
