@@ -76,14 +76,30 @@ export function extractProductUrls(html: string, baseUrl: string): string[] {
     return [...new Set(values)];
 }
 
+export function normalizeSellerSlug(value: string): string {
+    return value
+        .toLocaleLowerCase('tr-TR')
+        .replace(/ç/g, 'c')
+        .replace(/ğ/g, 'g')
+        .replace(/ı/g, 'i')
+        .replace(/ö/g, 'o')
+        .replace(/ş/g, 's')
+        .replace(/ü/g, 'u')
+        .normalize('NFKD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-+|-+$/g, '');
+}
+
 function sellerSlug(sourceUrl: string, seller: UnknownRecord): string | null {
     try {
         const fromQuery = new URL(sourceUrl).searchParams.get('magaza');
-        if (fromQuery) return fromQuery.toLocaleLowerCase('tr-TR');
+        if (fromQuery) return normalizeSellerSlug(fromQuery);
     } catch {}
     const bookmarkable = text(seller.sellerShopBookmarkableUrl);
-    if (bookmarkable) return bookmarkable;
-    return text(seller.nickName ?? seller.businessName)?.toLocaleLowerCase('tr-TR') ?? null;
+    if (bookmarkable) return normalizeSellerSlug(bookmarkable);
+    const fallback = text(seller.nickName ?? seller.businessName);
+    return fallback ? normalizeSellerSlug(fallback) : null;
 }
 
 function badges(seller: UnknownRecord): string[] {
@@ -182,7 +198,8 @@ export function parseMerchantProfile(html: string): MerchantProfile | null {
     const seller = record(shop?.sellerDTO);
     const sellerId = numeric(shop?.sellerId ?? seller?.id);
     const sellerName = text(shop?.sellerName ?? seller?.nickName ?? seller?.businessName);
-    const slug = text(sellerInfo?.sellerShopBookmarkableUrlForSeo);
+    const rawSlug = text(sellerInfo?.sellerShopBookmarkableUrlForSeo);
+    const slug = rawSlug ? normalizeSellerSlug(rawSlug) : null;
     if (!seller || sellerId === null || !sellerName || !slug) return null;
     const feedback = record(seller.sellerFeedbackStatistics);
     const grade = numeric(shop?.sellerGradeDecimal ?? seller?.sellerShopPoint);

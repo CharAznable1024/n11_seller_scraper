@@ -1,10 +1,15 @@
 import { describe, expect, it } from 'vitest';
 
-import { extractProductUrls, parseMerchantProfile, parseProductPage } from '../src/parser.js';
+import { extractProductUrls, normalizeSellerSlug, parseMerchantProfile, parseProductPage } from '../src/parser.js';
 
 const model = (value: unknown) => `<script>window.model = ${JSON.stringify(value)};</script>`;
 
 describe('N11 parsers', () => {
+    it('normalizes Turkish seller names into valid N11 store slugs', () => {
+        expect(normalizeSellerSlug('Dalkılıçspor')).toBe('dalkilicspor');
+        expect(normalizeSellerSlug('Hotiç')).toBe('hotic');
+    });
+
     it('extracts and deduplicates product URLs', () => {
         const html = '<a href="/urun/test-123?magaza=store">A</a><a href="https://www.n11.com/urun/test-123?magaza=store">B</a>';
         expect(extractProductUrls(html, 'https://www.n11.com/arama?q=test')).toEqual(['https://www.n11.com/urun/test-123?magaza=store']);
